@@ -21,14 +21,13 @@ if not BOT_TOKEN:
     logging.error("BOT_TOKEN не найден в переменных окружения. Убедитесь, что .env файл создан и содержит токен.")
     exit(1)
 
-# Вот тут были ошибки с отступами, теперь все ровно!
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # Базовый URL для OpenDota API
 OPENDOTA_API_BASE = "https://api.opendota.com/api/"
 
-# --- Вспомогательные функции для работы с OpenDota API ---
+# Вспомогательные функции для работы с OpenDota API 
 
 async def get_player_data(player_id: str):
     """Получает общие данные игрока по ID."""
@@ -41,7 +40,7 @@ async def get_player_data(player_id: str):
         return None
 
 async def get_player_win_loss(player_id: str):
-    """Получает статистику побед/поражений игрока."""
+    #Получает статистику побед/поражений игрока.
     try:
         response = requests.get(f"{OPENDOTA_API_BASE}players/{player_id}/wl")
         response.raise_for_status()
@@ -51,7 +50,7 @@ async def get_player_win_loss(player_id: str):
         return None
 
 async def get_player_heroes(player_id: str):
-    """Получает статистику по героям игрока."""
+    #Получает статистику по героям игрока.
     try:
         response = requests.get(f"{OPENDOTA_API_BASE}players/{player_id}/heroes")
         response.raise_for_status()
@@ -67,18 +66,18 @@ async def get_hero_names():
         response.raise_for_status()
         heroes_data = response.json()
         return {hero['localized_name'].lower(): str(hero['id']) for hero in heroes_data}
-    except requests.exceptions.RequestException as e:
+    exceptrequests.exceptions.RequestException as e:
         logging.error(f"Ошибка при запросе списка героев: {e}")
         return {}
 
-# --- Обработчики команд ---
+#  Обработчики команд 
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
-    """
-    Обрабатывает команду /start.
-    Выводит приветственное сообщение и основную клавиатуру.
-    """
+    
+    #Обрабатывает команду /start.
+    #Выводит приветственное сообщение и основную клавиатуру.
+    
     await message.answer(
         f"Привет, {hbold(message.from_user.full_name)}! Я Dota 2 Stats Bot.\n"
         "Я помогу тебе получить статистику игроков и героев.\n"
@@ -86,12 +85,12 @@ async def command_start_handler(message: Message) -> None:
         parse_mode="HTML"
     )
     # Здесь можно добавить основную клавиатуру, если она нужна
-    # Я раскомментировал ее, чтобы она работала сразу
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Мой профиль", callback_data="my_profile")],
-        [InlineKeyboardButton(text="Помощь", callback_data="help_command")]
-    ])
-    await message.answer("Выбери действие:", reply_markup=keyboard)
+    # Например:
+    # keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    #     [InlineKeyboardButton(text="Мой профиль", callback_data="my_profile")],
+    #     [InlineKeyboardButton(text="Помощь", callback_data="help_command")]
+    # ])
+    # await message.answer("Выбери действие:", reply_markup=keyboard)
 
 
 @dp.message(Command("help"))
@@ -104,7 +103,7 @@ async def command_help_handler(message: Message) -> None:
         f"{hbold('Доступные команды:')}\n"
         f"/profile [ID] - Общая статистика игрока (никнейм, MMR, винрейт).\n"
         f"/top [ID] - Топ-3 героя игрока по винрейту (минимум 5 матчей).\n"
-        f"/hero [ID] [Имя героя] - Детальная статистика по выбранному герою для игрока.\n"
+        f"/hero [ID] [Имя героя] - Детальная статистика по герою для игрока.\n"
         f"/help - Эта справка.\n\n"
         f"{hbold('Тестовые ID игроков:')}\n"
         f"70388657 (Miracle-)\n"
@@ -175,7 +174,7 @@ async def command_top_handler(message: Message) -> None:
         return
 
     player_id = args[1]
-    await message.answer(f"Загружаю топ героев игрока {player_id}...")
+    await message.answer(f"Загружаю топгероев игрока {player_id}...")
 
     player_heroes = await get_player_heroes(player_id)
     hero_names_map = await get_hero_names() # Получаем карту ID-имя героя
