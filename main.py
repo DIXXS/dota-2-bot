@@ -133,6 +133,76 @@ async def command_profile_handler(message: Message) -> None:
         await message.answer("Профиль не найден или статистика скрыта. "
                              "Убедитесь, что ID верен и история матчей игрока открыта.")
         return
+
+ profile = player_data.get('profile')
+    if not profile:
+        await message.answer("Профиль не найден или статистика скрыта. "
+                             "Убедитесь, что ID верен и история матчей игрока открыта.")
+        return
+
+    personaname = profile.get('personaname', 'Неизвестно')
+    mmr_estimate = player_data.get('mmr_estimate', {}).get('estimate', 'N/A')
+    wins = player_wl.get('win', 0)
+    losses = player_wl.get('lose', 0)
+    total_matches = wins + losses
+    winrate = (wins / total_matches * 100) if total_matches > 0 else 0
+
+    profile_text = (
+        f"{hbold('Профиль игрока:')} {hlink(personaname, f'https://www.opendota.com/players/{player_id}')}\n"
+        f"MMR (оценка): {mmr_estimate}\n"
+        f"Всего матчей: {total_matches}\n"
+        f"Побед: {wins}\n"
+        f"Поражений: {losses}\n"
+        f"Винрейт: {winrate:.2f}%"
+    )
+    await message.answer(profile_text, parse_mode="HTML")
+
+
+@dp.message(Command("top"))
+async def command_top_handler(message: Message) -> None:
+    
+    #Обрабатывает команду /top [ID].
+    #Показывает трех героев с лучшим винрейтом.
+    
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("Пожалуйста, укажите ID игрока. Пример: `/top 70388657`", parse_mode="Markdown")
+        return
+
+    player_id = args[1]
+    await message.answer(f"Загружаю топгероев игрока {player_id}...")
+
+    player_heroes = await get_player_heroes(player_id)
+    hero_names_map = await get_hero_names() # Получаем карту ID-имя героя
+
+    if not player_heroes:
+        await message.answer("Не удалось получить статистику по героям. "
+                             "Убедитесь, что ID верен и история матчей игрока открыта.")
+        return
+
+    # Фильтруем героев с минимум 5 матчами и считаем винрейт
+    filtered_heroes = []
+    for hero in player_heroes:
+        games = hero.get('games', 0)
+        if games >= 5:
+            wins = hero.get('win', 0)
+            hero_id = str(hero.get('hero_id'))
+            winrate = (wins / games * 100) if games > 0 else 0
+            hero_name = next((name for name, hid in hero_names_map.items() if hid == hero_id), f"Неизвестный герой ({hero_id})")
+            filtered_heroes.append({'name': hero_name.title(), 'winrate': winrate, 'games': games})
+
+    if not filtered_heroes:
+        await message.answer(f"У игрока {player_id} нет героев с минимум 5 сыгранными матчами или статистика скрыта.")
+        return
+
+    # Сортируем по винрейту и берем топ-3
+    top_heroes = sorted(filtered_heroes, key=lambda x: x['winrate'], reverse=True)[:3]
+
+    top_text = f"{hbold('Топ-3 героя игрока ')}{player_id}:\n"
+    for i, hero in enumerate(top_heroes):
+        top_text += f"{i+1}. {hero['name']}: {hero['winrate']:.2f}% винрейт ({hero['games']} матчей)\n"
+
+    await message.answer(top_text, parse_mode="HTML")
     
 
 
