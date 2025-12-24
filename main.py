@@ -82,12 +82,27 @@ async def command_start_handler(message: Message) -> None:
         "Используй команды ниже или /help для справки.",
         parse_mode="HTML"
     )
-    # Основную клавиатура
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-         [InlineKeyboardButton(text="Мой профиль", callback_data="my_profile")],
-         [InlineKeyboardButton(text="Помощь", callback_data="help_command")]
-     ])
-     await message.answer("Выбери действие:", reply_markup=keyboard)
+        @dp.message(CommandStart())
+    async def command_start_handler(message: Message) -> None:
+        """
+        Обрабатывает команду /start.
+        Выводит приветственное сообщение и основную клавиатуру.
+        """
+        await message.answer(
+            f"Привет, {hbold(message.from_user.full_name)}! Я Dota 2 Stats Bot.\n"
+            "Я помогу тебе получить статистику игроков и героев.\n"
+            "Используй команды ниже или /help для справки.",
+            parse_mode="HTML"
+        )
+        # Здесь можно добавить основную клавиатуру, если она нужна
+        # Например:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Мой профиль", callback_data="my_profile")],
+            [InlineKeyboardButton(text="Помощь", callback_data="help_command")]
+        ])
+        await message.answer("Выбери действие:", reply_markup=keyboard)
+    
+
 
 @dp.message(Command("help"))
 async def command_help_handler(message: Message) -> None:
