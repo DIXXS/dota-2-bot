@@ -15,3 +15,14 @@ __pycache__/
 *.pyc
 *.pyd
 *.pyo
+# IDE-файлы (например, PyCharm)
+.idea/
+*.iml
+
+# Логи
+*.log
+logs/
+
+# Файлы операционной системы
+.DS_Store
+Thumbs.db
