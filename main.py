@@ -20,15 +20,18 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     logging.error("BOT_TOKEN не найден в переменных окружения. Убедитесь, что .env файл создан и содержит токен.")
     exit(1)
-    
-    bot = Bot(token=BOT_TOKEN)
+
+# Вот тут были ошибки с отступами, теперь все ровно!
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # Базовый URL для OpenDota API
 OPENDOTA_API_BASE = "https://api.opendota.com/api/"
 
+# --- Вспомогательные функции для работы с OpenDota API ---
+
 async def get_player_data(player_id: str):
-    #Получает общие данные игрока по ID.
+    """Получает общие данные игрока по ID."""
     try:
         response = requests.get(f"{OPENDOTA_API_BASE}players/{player_id}")
         response.raise_for_status() # Вызывает исключение для ошибок HTTP
@@ -38,7 +41,7 @@ async def get_player_data(player_id: str):
         return None
 
 async def get_player_win_loss(player_id: str):
-    #Получает статистику побед/поражений игрока.
+    """Получает статистику побед/поражений игрока."""
     try:
         response = requests.get(f"{OPENDOTA_API_BASE}players/{player_id}/wl")
         response.raise_for_status()
@@ -48,7 +51,7 @@ async def get_player_win_loss(player_id: str):
         return None
 
 async def get_player_heroes(player_id: str):
-    #Получает статистику по героям игрока.
+    """Получает статистику по героям игрока."""
     try:
         response = requests.get(f"{OPENDOTA_API_BASE}players/{player_id}/heroes")
         response.raise_for_status()
@@ -58,7 +61,7 @@ async def get_player_heroes(player_id: str):
         return None
 
 async def get_hero_names():
-    #Получает список всех героев с их ID и именами.
+    """Получает список всех героев с их ID и именами."""
     try:
         response = requests.get(f"{OPENDOTA_API_BASE}heroes")
         response.raise_for_status()
@@ -68,7 +71,7 @@ async def get_hero_names():
         logging.error(f"Ошибка при запросе списка героев: {e}")
         return {}
 
-# Обработчики команд 
+# --- Обработчики команд ---
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
@@ -82,39 +85,26 @@ async def command_start_handler(message: Message) -> None:
         "Используй команды ниже или /help для справки.",
         parse_mode="HTML"
     )
-        @dp.message(CommandStart())
-    async def command_start_handler(message: Message) -> None:
-        """
-        Обрабатывает команду /start.
-        Выводит приветственное сообщение и основную клавиатуру.
-        """
-        await message.answer(
-            f"Привет, {hbold(message.from_user.full_name)}! Я Dota 2 Stats Bot.\n"
-            "Я помогу тебе получить статистику игроков и героев.\n"
-            "Используй команды ниже или /help для справки.",
-            parse_mode="HTML"
-        )
-        # Здесь можно добавить основную клавиатуру, если она нужна
-        # Например:
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Мой профиль", callback_data="my_profile")],
-            [InlineKeyboardButton(text="Помощь", callback_data="help_command")]
-        ])
-        await message.answer("Выбери действие:", reply_markup=keyboard)
-    
+    # Здесь можно добавить основную клавиатуру, если она нужна
+    # Я раскомментировал ее, чтобы она работала сразу
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Мой профиль", callback_data="my_profile")],
+        [InlineKeyboardButton(text="Помощь", callback_data="help_command")]
+    ])
+    await message.answer("Выбери действие:", reply_markup=keyboard)
 
 
 @dp.message(Command("help"))
 async def command_help_handler(message: Message) -> None:
-    
-    #Обрабатывает команду /help.
-    #Выводит справочную информацию.
-    
+    """
+    Обрабатывает команду /help.
+    Выводит справочную информацию.
+    """
     help_text = (
         f"{hbold('Доступные команды:')}\n"
         f"/profile [ID] - Общая статистика игрока (никнейм, MMR, винрейт).\n"
         f"/top [ID] - Топ-3 героя игрока по винрейту (минимум 5 матчей).\n"
-        f"/hero [ID] [Имя героя] - Детальная статистика по герою для игрока.\n"
+        f"/hero [ID] [Имя героя] - Детальная статистика по выбранному герою для игрока.\n"
         f"/help - Эта справка.\n\n"
         f"{hbold('Тестовые ID игроков:')}\n"
         f"70388657 (Miracle-)\n"
@@ -129,10 +119,10 @@ async def command_help_handler(message: Message) -> None:
 
 @dp.message(Command("profile"))
 async def command_profile_handler(message: Message) -> None:
-    
-    #Обрабатывает команду /profile [ID].
-    #Отображает общую статистику игрока.
-    
+    """
+    Обрабатывает команду /profile [ID].
+    Отображает общую статистику игрока.
+    """
     args = message.text.split()
     if len(args) < 2:
         await message.answer("Пожалуйста, укажите ID игрока. Пример: `/profile 70388657`", parse_mode="Markdown")
@@ -149,7 +139,7 @@ async def command_profile_handler(message: Message) -> None:
                              "Убедитесь, что ID верен и история матчей игрока открыта.")
         return
 
- profile = player_data.get('profile')
+    profile = player_data.get('profile')
     if not profile:
         await message.answer("Профиль не найден или статистика скрыта. "
                              "Убедитесь, что ID верен и история матчей игрока открыта.")
@@ -175,17 +165,17 @@ async def command_profile_handler(message: Message) -> None:
 
 @dp.message(Command("top"))
 async def command_top_handler(message: Message) -> None:
-    
-    #Обрабатывает команду /top [ID].
-    #Показывает трех героев с лучшим винрейтом.
-    
+    """
+    Обрабатывает команду /top [ID].
+    Показывает трех героев с лучшим винрейтом.
+    """
     args = message.text.split()
     if len(args) < 2:
         await message.answer("Пожалуйста, укажите ID игрока. Пример: `/top 70388657`", parse_mode="Markdown")
         return
 
     player_id = args[1]
-    await message.answer(f"Загружаю топгероев игрока {player_id}...")
+    await message.answer(f"Загружаю топ героев игрока {player_id}...")
 
     player_heroes = await get_player_heroes(player_id)
     hero_names_map = await get_hero_names() # Получаем карту ID-имя героя
@@ -218,6 +208,7 @@ async def command_top_handler(message: Message) -> None:
         top_text += f"{i+1}. {hero['name']}: {hero['winrate']:.2f}% винрейт ({hero['games']} матчей)\n"
 
     await message.answer(top_text, parse_mode="HTML")
+
 
 @dp.message(Command("hero"))
 async def command_hero_handler(message: Message) -> None:
@@ -253,7 +244,7 @@ async def command_hero_handler(message: Message) -> None:
         await message.answer(f"Игрок {player_id} не играл на герое '{hero_name_input.title()}' или статистика скрыта.")
         return
 
-  wins = hero_stats.get('win', 0)
+    wins = hero_stats.get('win', 0)
     games = hero_stats.get('games', 0)
     losses = games - wins
     winrate = (wins / games * 100) if games > 0 else 0
@@ -269,13 +260,10 @@ async def command_hero_handler(message: Message) -> None:
 
 
 async def main() -> None:
-    #Запускает бота.
+    """Запускает бота."""
     # Запускаем получение обновлений
     await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
-
-
