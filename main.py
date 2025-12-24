@@ -203,6 +203,64 @@ async def command_top_handler(message: Message) -> None:
         top_text += f"{i+1}. {hero['name']}: {hero['winrate']:.2f}% винрейт ({hero['games']} матчей)\n"
 
     await message.answer(top_text, parse_mode="HTML")
+
+@dp.message(Command("hero"))
+async def command_hero_handler(message: Message) -> None:
+    """
+    Обрабатывает команду /hero [ID] [Имя героя].
+    Предоставляет детальную статистику по выбранному герою для указанного игрока.
+    """
+    args = message.text.split(maxsplit=2) # Разделяем на 3 части: /hero, ID, Имя героя
+    if len(args) < 3:
+        await message.answer("Пожалуйста, укажите ID игрока и имя героя. Пример: `/hero 70388657 Pudge`", parse_mode="Markdown")
+        return
+
+    player_id = args[1]
+    hero_name_input = args[2].lower()
+    await message.answer(f"Загружаю статистику по герою '{hero_name_input.title()}' для игрока {player_id}...")
+
+    hero_names_map = await get_hero_names()
+    hero_id = hero_names_map.get(hero_name_input)
+
+    if not hero_id:
+        await message.answer(f"Герой '{hero_name_input.title()}' не найден. Проверьте правильность написания.")
+        return
+
+    player_heroes = await get_player_heroes(player_id)
+    if not player_heroes:
+        await message.answer("Не удалось получить статистику по героям. "
+                             "Убедитесь, что ID верен и история матчей игрока открыта.")
+        return
+
+    hero_stats = next((h for h in player_heroes if str(h.get('hero_id')) == hero_id), None)
+
+    if not hero_stats:
+        await message.answer(f"Игрок {player_id} не играл на герое '{hero_name_input.title()}' или статистика скрыта.")
+        return
+
+  wins = hero_stats.get('win', 0)
+    games = hero_stats.get('games', 0)
+    losses = games - wins
+    winrate = (wins / games * 100) if games > 0 else 0
+
+    hero_stat_text = (
+        f"{hbold('Статистика по герою ')}{hero_name_input.title()} для игрока {player_id}:\n"
+        f"Сыграно матчей: {games}\n"
+        f"Побед: {wins}\n"
+        f"Поражений: {losses}\n"
+        f"Винрейт: {winrate:.2f}%"
+    )
+    await message.answer(hero_stat_text, parse_mode="HTML")
+
+
+async def main() -> None:
+    #Запускает бота.
+    # Запускаем получение обновлений
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
     
 
 
