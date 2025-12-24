@@ -64,6 +64,30 @@ async def get_hero_names():
         response.raise_for_status()
         heroes_data = response.json()
         return {hero['localized_name'].lower(): str(hero['id']) for hero in heroes_data}
-    except
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Ошибка при запросе списка героев: {e}")
+        return {}
+
+# Обработчики команд 
+
+@dp.message(CommandStart())
+async def command_start_handler(message: Message) -> None:
+    """
+    Обрабатывает команду /start.
+    Выводит приветственное сообщение и основную клавиатуру.
+    """
+    await message.answer(
+        f"Привет, {hbold(message.from_user.full_name)}! Я Dota 2 Stats Bot.\n"
+        "Я помогу тебе получить статистику игроков и героев.\n"
+        "Используй команды ниже или /help для справки.",
+        parse_mode="HTML"
+    )
+    # Основную клавиатура
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+         [InlineKeyboardButton(text="Мой профиль", callback_data="my_profile")],
+         [InlineKeyboardButton(text="Помощь", callback_data="help_command")]
+     ])
+     await message.answer("Выбери действие:", reply_markup=keyboard)
+    
 
 
