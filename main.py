@@ -66,7 +66,7 @@ async def get_hero_names():
         response.raise_for_status()
         heroes_data = response.json()
         return {hero['localized_name'].lower(): str(hero['id']) for hero in heroes_data}
-    exceptrequests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException as e:
         logging.error(f"Ошибка при запросе списка героев: {e}")
         return {}
 
