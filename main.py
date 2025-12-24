@@ -88,6 +88,51 @@ async def command_start_handler(message: Message) -> None:
          [InlineKeyboardButton(text="Помощь", callback_data="help_command")]
      ])
      await message.answer("Выбери действие:", reply_markup=keyboard)
+
+@dp.message(Command("help"))
+async def command_help_handler(message: Message) -> None:
+    
+    #Обрабатывает команду /help.
+    #Выводит справочную информацию.
+    
+    help_text = (
+        f"{hbold('Доступные команды:')}\n"
+        f"/profile [ID] - Общая статистика игрока (никнейм, MMR, винрейт).\n"
+        f"/top [ID] - Топ-3 героя игрока по винрейту (минимум 5 матчей).\n"
+        f"/hero [ID] [Имя героя] - Детальная статистика по герою для игрока.\n"
+        f"/help - Эта справка.\n\n"
+        f"{hbold('Тестовые ID игроков:')}\n"
+        f"70388657 (Miracle-)\n"
+        f"106869122 (Dendi)\n\n"
+        f"{hbold('Решение проблем:')}\n"
+        "Если бот сообщает 'Профиль не найден или статистика скрыта.', "
+        "убедитесь, что у игрока включена 'Общедоступная история матчей' в настройках Dota 2.\n"
+        "Настройки -> Сообщество -> Общедоступная история матчей."
+    )
+    await message.answer(help_text, parse_mode="HTML")
+
+
+@dp.message(Command("profile"))
+async def command_profile_handler(message: Message) -> None:
+    
+    #Обрабатывает команду /profile [ID].
+    #Отображает общую статистику игрока.
+    
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("Пожалуйста, укажите ID игрока. Пример: `/profile 70388657`", parse_mode="Markdown")
+        return
+
+    player_id = args[1]
+    await message.answer(f"Загружаю профиль игрока {player_id}...")
+
+    player_data = await get_player_data(player_id)
+    player_wl = await get_player_win_loss(player_id)
+
+    if not player_data or not player_wl:
+        await message.answer("Профиль не найден или статистика скрыта. "
+                             "Убедитесь, что ID верен и история матчей игрока открыта.")
+        return
     
 
 
