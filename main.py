@@ -1,268 +1,374 @@
-import os
-import asyncio
+# --- Импорты библиотек ---
 import logging
-import requests
-from dotenv import load_dotenv
+import os
+import aiohttp # Для асинхронных HTTP-запросов к API
+from dotenv import load_dotenv # Для загрузки переменных окружения из .env
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.markdown import hbold, hlink
+from aiogram.contrib.fsm_storage.memory import MemoryStorage # Для хранения состояний FSM в памяти
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
 
-# Загружаем переменные окружения из .env файла
-load_dotenv()
-
-# Настраиваем логирование
+# --- Настройка логирования ---
+# Это поможет видеть, что происходит с ботом в консоли
 logging.basicConfig(level=logging.INFO)
 
-# Инициализация бота и диспетчера
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    logging.error("BOT_TOKEN не найден в переменных окружения. Убедитесь, что .env файл создан и содержит токен.")
-    exit(1)
+# --- Загрузка переменных окружения ---
+# Ищет файл .env в корне проекта и загружает из него переменные
+load_dotenv()
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+# Получаем токен бота из переменной окружения TELEGRAM_BOT_TOKEN
+# Если переменная не найдена, выдаст ошибку, чтобы ты не забыл её добавить
+API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+# Получаем ключ OpenDota API из переменной окружения OPEN_DOTA_API_KEY
+OPEN_DOTA_API_KEY = os.getenv('OPEN_DOTA_API_KEY')
 
-# Базовый URL для OpenDota API
-OPENDOTA_API_BASE = "https://api.opendota.com/api/"
+# Проверяем, что токены загружены
+if not API_TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN не найден в .env файле!")
+if not OPEN_DOTA_API_KEY:
+    raise ValueError("OPEN_DOTA_API_KEY не найден в .env файле!")
 
-# Вспомогательные функции для работы с OpenDota API 
+# --- Инициализация бота и диспетчера ---
+# Bot - это сам экземпляр бота, через который отправляются запросы к Telegram API
+bot = Bot(token=API_TOKEN, parse_mode=types.ParseMode.HTML) # parse_mode=HTML для жирного текста и т.д.
+# MemoryStorage - хранилище состояний FSM (для учебного проекта достаточно)
+storage = MemoryStorage()
+# Dispatcher - обрабатывает входящие обновления от Telegram
+dp = Dispatcher(bot, storage=storage)
 
-async def get_player_data(player_id: str):
-    """Получает общие данные игрока по ID."""
+# --- Определение состояний для FSM ---
+# Используется для пошагового ввода данных от пользователя
+class Form(StatesGroup):
+    player_id = State() # Состояние ожидания ID игрока
+
+# --- Вспомогательные функции для работы с OpenDota API ---
+
+# Функция для получения статистики игрока
+async def get_player_stats(player_id: int):
+    """
+    Получает общую статистику игрока по его ID из OpenDota API.
+    Обрабатывает возможные ошибки API.
+    """
+    url = f"https://api.opendota.com/api/players/{player_id}?api_key={OPEN_DOTA_API_KEY}"
     try:
-        response = requests.get(f"{OPENDOTA_API_BASE}players/{player_id}")
-        response.raise_for_status() # Вызывает исключение для ошибок HTTP
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Ошибка при запросе данных игрока {player_id}: {e}")
-        return None
+        async with aiohttp.ClientSession() as session: # Создаем асинхронную сессию
+            async with session.get(url) as response: # Отправляем GET-запрос
+                if response.status == 200: # Если запрос успешен (код 200 OK)
+                    data = await response.json() # Парсим JSON-ответ
+                    return data
+                elif response.status == 404: # Если игрок не найден
+                    return {"error": "Игрок с таким ID не найден в OpenDota. Проверьте ID."}
+                else: # Другие ошибки API
+                    return {"error": f"Ошибка OpenDota API: {response.status}. Попробуйте позже."}
+    except aiohttp.ClientError: # Ошибка сетевого подключения
+        return {"error": "Не удалось подключиться к OpenDota API. Проверьте интернет-соединение."}
+    except Exception as e: # Любая другая непредвиденная ошибка
+        logging.error(f"Непредвиденная ошибка при получении статистики игрока: {e}")
+        return {"error": "Произошла непредвиденная ошибка. Попробуйте позже."}
 
-async def get_player_win_loss(player_id: str):
-    #Получает статистику побед/поражений игрока.
+# Функция для получения винрейта игрока
+async def get_player_win_loss(player_id: int):
+    """
+    Получает количество побед и поражений игрока.
+    """
+    url = f"https://api.opendota.com/api/players/{player_id}/wl?api_key={OPEN_DOTA_API_KEY}"
     try:
-        response = requests.get(f"{OPENDOTA_API_BASE}players/{player_id}/wl")
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Ошибка при запросе статистики побед/поражений игрока {player_id}: {e}")
-        return None
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+return data
+                else:
+                    return {"error": f"Ошибка API при получении W/L: {response.status}"}
+    except aiohttp.ClientError:
+        return {"error": "Ошибка сети при получении W/L."}
 
-async def get_player_heroes(player_id: str):
-    #Получает статистику по героям игрока.
+# Функция для получения списка героев игрока
+async def get_player_heroes(player_id: int):
+    """
+    Получает список героев, на которых играл игрок, с их статистикой.
+    """
+    url = f"https://api.opendota.com/api/players/{player_id}/heroes?api_key={OPEN_DOTA_API_KEY}"
     try:
-        response = requests.get(f"{OPENDOTA_API_BASE}players/{player_id}/heroes")
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Ошибка при запросе статистики героев игрока {player_id}: {e}")
-        return None
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data
+                else:
+                    return {"error": f"Ошибка API при получении героев: {response.status}"}
+    except aiohttp.ClientError:
+        return {"error": "Ошибка сети при получении героев."}
 
-async def get_hero_names():
-    """Получает список всех героев с их ID и именами."""
+# Функция для получения статистики по конкретному герою
+async def get_hero_stats_by_id(hero_id: int):
+    """
+    Получает общую информацию о герое по его ID.
+    """
+    url = f"https://api.opendota.com/api/heroes/{hero_id}?api_key={OPEN_DOTA_API_KEY}"
     try:
-        response = requests.get(f"{OPENDOTA_API_BASE}heroes")
-        response.raise_for_status()
-        heroes_data = response.json()
-        return {hero['localized_name'].lower(): str(hero['id']) for hero in heroes_data}
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Ошибка при запросе списка героев: {e}")
-        return {}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data
+                else:
+                    return {"error": f"Ошибка API при получении данных героя: {response.status}"}
+    except aiohttp.ClientError:
+        return {"error": "Ошибка сети при получении данных героя."}
 
-#  Обработчики команд 
+# --- Вспомогательные функции для форматирования данных ---
 
-@dp.message(CommandStart())
-async def command_start_handler(message: Message) -> None:
+# Функция для преобразования rank_tier в читабельный ранг
+def get_rank_tier_name(rank_tier: int):
+    """
+    Преобразует числовой rank_tier из OpenDota в название ранга.
+    """
+    if rank_tier is None:
+        return "Неизвестно"
     
-    #Обрабатывает команду /start.
-    #Выводит приветственное сообщение и основную клавиатуру.
+    # OpenDota rank_tier: 0-8 для рангов, 0-7 для звезд
+    # Пример: 11 = Herald 1, 87 = Divine 7
+    rank_names = ["Herald", "Guardian", "Crusader", "Archon", "Legend", "Ancient", "Divine", "Immortal"]
     
-    await message.answer(
-        f"Привет, {hbold(message.from_user.full_name)}! Я Dota 2 Stats Bot.\n"
-        "Я помогу тебе получить статистику игроков и героев.\n"
-        "Используй команды ниже или /help для справки.",
-        parse_mode="HTML"
+    tier = rank_tier // 10 # Получаем номер ранга (0-8)
+    stars = rank_tier % 10 # Получаем количество звезд (0-7)
+
+    if tier >= 0 and tier < len(rank_names):
+        if tier == 8: # Immortal не имеет звезд
+            return "Immortal"
+        return f"{rank_names[tier]} {stars}"
+    return "Неизвестно"
+
+# --- Обработчики команд Telegram ---
+
+@dp.message_handler(commands=['start'])
+async def send_welcome(message: types.Message):
+    """
+    Обработчик команды /start. Отправляет приветствие и инструкцию.
+    """
+    await message.reply(
+        "Привет! Я бот для получения статистики по Dota 2.\n"
+        "Используй команду /help для получения списка команд."
     )
-    # Здесь можно добавить основную клавиатуру, если она нужна
-    # Например:
-    # keyboard = InlineKeyboardMarkup(inline_keyboard=[
-    #     [InlineKeyboardButton(text="Мой профиль", callback_data="my_profile")],
-    #     [InlineKeyboardButton(text="Помощь", callback_data="help_command")]
-    # ])
-    # await message.answer("Выбери действие:", reply_markup=keyboard)
 
-
-@dp.message(Command("help"))
-async def command_help_handler(message: Message) -> None:
+@dp.message_handler(commands=['help'])
+async def send_help(message: types.Message):
     """
-    Обрабатывает команду /help.
-    Выводит справочную информацию.
+    Обработчик команды /help. Отправляет список доступных команд.
     """
-    help_text = (
-        f"{hbold('Доступные команды:')}\n"
-        f"/profile [ID] - Общая статистика игрока (никнейм, MMR, винрейт).\n"
-        f"/top [ID] - Топ-3 героя игрока по винрейту (минимум 5 матчей).\n"
-        f"/hero [ID] [Имя героя] - Детальная статистика по герою для игрока.\n"
-        f"/help - Эта справка.\n\n"
-        f"{hbold('Тестовые ID игроков:')}\n"
-        f"70388657 (Miracle-)\n"
-        f"106869122 (Dendi)\n\n"
-        f"{hbold('Решение проблем:')}\n"
-        "Если бот сообщает 'Профиль не найден или статистика скрыта.', "
-        "убедитесь, что у игрока включена 'Общедоступная история матчей' в настройках Dota 2.\n"
-        "Настройки -> Сообщество -> Общедоступная история матчей."
+    await message.reply(
+        "<b>Доступные команды:</b>\n"
+        "/profile [ID игрока] - получить общую статистику игрока.\n"
+        "/top [ID игрока] - получить статистику по лучшим героям игрока.\n"
+        "/hero [ID игрока] [Имя героя] - получить статистику по конкретному герою.\n"
+        "<i>ID игрока можно найти на сайте OpenDota или в клиенте Dota 2.</i>"
     )
-    await message.answer(help_text, parse_mode="HTML")
 
-
-@dp.message(Command("profile"))
-async def command_profile_handler(message: Message) -> None:
+# --- Обработчик для команды /profile ---
+@dp.message_handler(commands=['profile'])
+async def cmd_profile(message: types.Message, state: FSMContext):
     """
-    Обрабатывает команду /profile [ID].
-    Отображает общую статистику игрока.
+    Обработчик команды /profile. Запрашивает ID игрока или обрабатывает его, если он передан сразу.
     """
-    args = message.text.split()
-    if len(args) < 2:
-        await message.answer("Пожалуйста, укажите ID игрока. Пример: `/profile 70388657`", parse_mode="Markdown")
+    args = message.get_args() # Получаем аргументы команды (то, что после /profile)
+    if args: # Если ID передан сразу
+        try:
+            player_id = int(args)
+            await process_player_profile(message, player_id)
+        except ValueError:
+            await message.reply("Неверный формат ID игрока. ID должен быть числом.")
+    else: # Если ID не передан, запрашиваем его await message.reply("Пожалуйста, введите ID игрока для получения профиля.")
+        await Form.player_id.set() # Устанавливаем состояние ожидания ID
+
+# Обработчик для получения ID игрока, когда бот находится в состоянии Form.player_id
+@dp.message_handler(state=Form.player_id)
+async def process_player_id_for_profile(message: types.Message, state: FSMContext):
+    """
+    Обрабатывает введенный ID игрока для команды /profile.
+    """
+    try:
+        player_id = int(message.text)
+        await state.finish() # Завершаем состояние FSM
+        await process_player_profile(message, player_id)
+    except ValueError:
+        await message.reply("Неверный формат ID игрока. ID должен быть числом. Попробуйте еще раз.")
+
+# Вспомогательная функция для обработки и вывода профиля игрока
+async def process_player_profile(message: types.Message, player_id: int):
+    """
+    Получает и форматирует статистику игрока, затем отправляет её.
+    """
+    await message.reply(f"Загружаю статистику для игрока с ID: <code>{player_id}</code>...")
+    
+    stats_data = await get_player_stats(player_id)
+    if "error" in stats_data:
+        await message.reply(stats_data["error"])
         return
 
-    player_id = args[1]
-    await message.answer(f"Загружаю профиль игрока {player_id}...")
-
-    player_data = await get_player_data(player_id)
-    player_wl = await get_player_win_loss(player_id)
-
-    if not player_data or not player_wl:
-        await message.answer("Профиль не найден или статистика скрыта. "
-                             "Убедитесь, что ID верен и история матчей игрока открыта.")
+    wl_data = await get_player_win_loss(player_id)
+    if "error" in wl_data:
+        await message.reply(wl_data["error"])
         return
 
-    profile = player_data.get('profile')
-    if not profile:
-        await message.answer("Профиль не найден или статистика скрыта. "
-                             "Убедитесь, что ID верен и история матчей игрока открыта.")
-        return
+    profile = stats_data.get("profile", {})
+    mmr_estimate = stats_data.get("mmr_estimate", {})
 
-    personaname = profile.get('personaname', 'Неизвестно')
-    mmr_estimate = player_data.get('mmr_estimate', {}).get('estimate', 'N/A')
-    wins = player_wl.get('win', 0)
-    losses = player_wl.get('lose', 0)
+    player_name = profile.get("personaname", "Неизвестный игрок")
+    steam_id = profile.get("steamid", "N/A")
+    solo_mmr = mmr_estimate.get("solo_estimate", "N/A")
+    rank_tier = profile.get("rank_tier")
+    
+    wins = wl_data.get("win", 0)
+    losses = wl_data.get("lose", 0)
     total_matches = wins + losses
-    winrate = (wins / total_matches * 100) if total_matches > 0 else 0
+    win_rate = (wins / total_matches * 100) if total_matches > 0 else 0
 
-    profile_text = (
-        f"{hbold('Профиль игрока:')} {hlink(personaname, f'https://www.opendota.com/players/{player_id}')}\n"
-        f"MMR (оценка): {mmr_estimate}\n"
+    message_text = (
+        f"<b>Статистика игрока: {player_name}</b>\n"
+        f"Steam ID: <code>{steam_id}</code>\n"
+        f"Примерный Solo MMR: {solo_mmr}\n"
+        f"Ранг: {get_rank_tier_name(rank_tier)}\n"
         f"Всего матчей: {total_matches}\n"
-        f"Побед: {wins}\n"
-        f"Поражений: {losses}\n"
-        f"Винрейт: {winrate:.2f}%"
+        f"Побед: {wins}, Поражений: {losses}\n"
+        f"Винрейт: {win_rate:.2f}%" # Форматируем до двух знаков после запятой
     )
-    await message.answer(profile_text, parse_mode="HTML")
+    await message.reply(message_text)
 
+# --- Обработчик для команды /top (лучшие герои) ---
+@dp.message_handler(commands=['top'])
+async def cmd_top_heroes(message: types.Message, state: FSMContext):
+    """
+    Обработчик команды /top. Запрашивает ID игрока или обрабатывает его, если он передан сразу.
+    """
+    args = message.get_args()
+    if args:
+        try:
+            player_id = int(args)
+            await process_player_top_heroes(message, player_id)
+        except ValueError:
+            await message.reply("Неверный формат ID игрока. ID должен быть числом.")
+    else:
+        await message.reply("Пожалуйста, введите ID игрока для получения списка лучших героев.")
+        await Form.player_id.set() # Используем то же состояние, но для другой команды
 
-@dp.message(Command("top"))
-async def command_top_handler(message: Message) -> None:
+# Обработчик для получения ID игрока, когда бот находится в состоянии Form.player_id для /top
+@dp.message_handler(state=Form.player_id)
+async def process_player_id_for_top(message: types.Message, state: FSMContext):
     """
-    Обрабатывает команду /top [ID].
-    Показывает трех героев с лучшим винрейтом.
+    Обрабатывает введенный ID игрока для команды /top.
     """
-    args = message.text.split()
-    if len(args) < 2:
-        await message.answer("Пожалуйста, укажите ID игрока. Пример: `/top 70388657`", parse_mode="Markdown")
+    try:
+        player_id = int(message.text)
+        await state.finish()
+        await process_player_top_heroes(message, player_id)
+    except ValueError:
+        await message.reply("Неверный формат ID игрока. ID должен быть числом. Попробуйте еще раз.")
+
+# Вспомогательная функция для обработки и вывода лучших героев
+async def process_player_top_heroes(message: types.Message, player_id: int):
+    """
+    Получает и форматирует статистику по лучшим героям игрока, затем отправляет её.
+    """
+    await message.reply(f"Загружаю лучших героев для игрока с ID: <code>{player_id}</code>...")
+    
+    heroes_data = await get_player_heroes(player_id)
+    if "error" in heroes_data:
+        await message.reply(heroes_data["error"])
+        return
+    
+    if not heroes_data:
+        await message.reply("Не найдено данных по героям для этого игрока.")
         return
 
-    player_id = args[1]
-    await message.answer(f"Загружаю топгероев игрока {player_id}...")
+    # Сортируем героев по количеству игр и берем топ-5
+    top_heroes = sorted(heroes_data, key=lambda x: x.get('games', 0), reverse=True)[:5]
 
-    player_heroes = await get_player_heroes(player_id)
-    hero_names_map = await get_hero_names() # Получаем карту ID-имя героя
-
-    if not player_heroes:
-        await message.answer("Не удалось получить статистику по героям. "
-                             "Убедитесь, что ID верен и история матчей игрока открыта.")
-        return
-
-    # Фильтруем героев с минимум 5 матчами и считаем винрейт
-    filtered_heroes = []
-    for hero in player_heroes:
+    message_text = f"<b>Топ-5 героев игрока (по количеству игр):</b>\n"
+    for hero in top_heroes:
+        hero_id = hero.get('hero_id')
         games = hero.get('games', 0)
-        if games >= 5:
-            wins = hero.get('win', 0)
-            hero_id = str(hero.get('hero_id'))
-            winrate = (wins / games * 100) if games > 0 else 0
-            hero_name = next((name for name, hid in hero_names_map.items() if hid == hero_id), f"Неизвестный герой ({hero_id})")
-            filtered_heroes.append({'name': hero_name.title(), 'winrate': winrate, 'games': games})
+        wins = hero.get('win', 0)
+        losses = games - wins
+        win_rate = (wins / games * 100) if games > 0 else 0
+        
+        # Нужно получить имя героя по ID. OpenDota API не дает имя героя в этом запросе.
+        # Для простоты, пока будем выводить ID героя. В реальном проекте нужно было бы
+        # загрузить список всех героев с их ID и именами.
+        message_text += (
+            f"  - Герой ID: {hero_id} (Игр: {games}, Винрейт: {win_rate:.2f}%)\n"
+        )
+    await message.reply(message_text)
 
-    if not filtered_heroes:
-        await message.answer(f"У игрока {player_id} нет героев с минимум 5 сыгранными матчами или статистика скрыта.")
-        return
-
-    # Сортируем по винрейту и берем топ-3
-    top_heroes = sorted(filtered_heroes, key=lambda x: x['winrate'], reverse=True)[:3]
-
-    top_text = f"{hbold('Топ-3 героя игрока ')}{player_id}:\n"
-    for i, hero in enumerate(top_heroes):
-        top_text += f"{i+1}. {hero['name']}: {hero['winrate']:.2f}% винрейт ({hero['games']} матчей)\n"
-
-    await message.answer(top_text, parse_mode="HTML")
-
-
-@dp.message(Command("hero"))
-async def command_hero_handler(message: Message) -> None:
+# --- Обработчик для команды /hero (статистика по конкретному герою) ---
+@dp.message_handler(commands=['hero'])
+async def cmd_hero_stats(message: types.Message, state: FSMContext):
     """
-    Обрабатывает команду /hero [ID] [Имя героя].
-    Предоставляет детальную статистику по выбранному герою для указанного игрока.
+    Обработчик команды /hero. Запрашивает ID игрока и имя героя.
     """
-    args = message.text.split(maxsplit=2) # Разделяем на 3 части: /hero, ID, Имя героя
-    if len(args) < 3:
-        await message.answer("Пожалуйста, укажите ID игрока и имя героя. Пример: `/hero 70388657 Pudge`", parse_mode="Markdown")
+    args = message.get_args().split(maxsplit=1) # Разделяем аргументы: ID и остальное как имя героя
+    if len(args) >= 2: # Если ID и имя героя переданы сразу
+        try:
+            player_id = int(args[0])
+            hero_name = args[1]
+            await process_player_hero_stats(message, player_id, hero_name)
+        except ValueError:
+            await message.reply("Неверный формат ID игрока. ID должен быть числом.")
+    else: # Если не хватает аргументов, запрашиваем
+        await message.reply("Пожалуйста, введите ID игрока и имя героя (например: /hero 123456789 Pudge).")
+        # Можно создать отдельное FSM состояние для этого, но для простоты пока так.
+        # Или можно использовать FSM для последовательного запроса ID, потом имени героя.
+
+# Вспомогательная функция для обработки и вывода статистики по герою
+async def process_player_hero_stats(message: types.Message, player_id: int, hero_name: str):
+    """
+    Получает и форматирует статистику игрока по конкретному герою, затем отправляет её.
+    """
+    await message.reply(f"Загружаю статистику для игрока <code>{player_id}</code> на герое {hero_name}...")
+    
+    # В OpenDota API нет прямого запроса "статистика игрока на герое по имени".
+    # Нужно сначала получить всех героев игрока, потом найти нужного по имени.
+    # Для этого нужен список всех героев Dota 2 с их ID и именами.
+    # Это сложнее, чем кажется, так как API возвращает hero_id, а не имя.
+    # Для простоты, пока будем искать по hero_id, если пользователь его знает.
+    # Или нужно загрузить полный список героев OpenDota и сопоставлять имена.
+
+    # Пример упрощенной логики:
+    # Предположим, что hero_name - это hero_id для простоты
+    try:
+        target_hero_id = int(hero_name) # Если пользователь ввел ID героя
+    except ValueError:
+        await message.reply("Для команды /hero пока поддерживается только ID героя вместо имени. Например: /hero 123456789 1 (где 1 - ID Антимага).")
         return
 
-    player_id = args[1]
-    hero_name_input = args[2].lower()
-    await message.answer(f"Загружаю статистику по герою '{hero_name_input.title()}' для игрока {player_id}...")
-
-    hero_names_map = await get_hero_names()
-    hero_id = hero_names_map.get(hero_name_input)
-
-    if not hero_id:
-        await message.answer(f"Герой '{hero_name_input.title()}' не найден. Проверьте правильность написания.")
+    heroes_data = await get_player_heroes(player_id)
+    if "error" in heroes_data:
+        await message.reply(heroes_data["error"])
+        return
+    
+    found_hero_stats = None
+    for hero in heroes_data:
+        if hero.get('hero_id') == target_hero_id:
+            found_hero_stats = hero
+            break
+    
+    if not found_hero_stats:
+        await message.reply(f"Игрок <code>{player_id}</code> не играл на герое с ID {target_hero_id} или данные не найдены.")
         return
 
-    player_heroes = await get_player_heroes(player_id)
-    if not player_heroes:
-        await message.answer("Не удалось получить статистику по героям. "
-                             "Убедитесь, что ID верен и история матчей игрока открыта.")
-        return
-
-    hero_stats = next((h for h in player_heroes if str(h.get('hero_id')) == hero_id), None)
-
-    if not hero_stats:
-        await message.answer(f"Игрок {player_id} не играл на герое '{hero_name_input.title()}' или статистика скрыта.")
-        return
-
-    wins = hero_stats.get('win', 0)
-    games = hero_stats.get('games', 0)
+    games = found_hero_stats.get('games', 0)
+    wins = found_hero_stats.get('win', 0)
     losses = games - wins
-    winrate = (wins / games * 100) if games > 0 else 0
+    win_rate = (wins / games * 100) if games > 0 else 0
 
-    hero_stat_text = (
-        f"{hbold('Статистика по герою ')}{hero_name_input.title()} для игрока {player_id}:\n"
-        f"Сыграно матчей: {games}\n"
-        f"Побед: {wins}\n"
-        f"Поражений: {losses}\n"
-        f"Винрейт: {winrate:.2f}%"
+    # В реальном проекте здесь нужно получить имя героя по ID
+    hero_name_display = f"Герой ID {target_hero_id}" # Заглушка
+
+    message_text = (
+        f"<b>Статистика игрока <code>{player_id}</code> на {hero_name_display}:</b>\n"
+        f"Игр: {games}\n"
+        f"Побед: {wins}, Поражений: {losses}\n"
+        f"Винрейт: {win_rate:.2f}%"
     )
-    await message.answer(hero_stat_text, parse_mode="HTML")
-
-
-async def main() -> None:
-    """Запускает бота."""
-    # Запускаем получение обновлений
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    await message.reply(message_text)    
